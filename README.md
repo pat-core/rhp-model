@@ -1,5 +1,5 @@
 # rhp-model
-Implementation of
+Python-implementation of
 
 SONG, F.; EWING, D.; CHING, C. Y. 
 Fluid flow and heat transfer model for high-speed rotating heat pipes. 

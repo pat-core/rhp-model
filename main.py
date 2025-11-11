@@ -1,3 +1,9 @@
+""" 
+Python-implementation of rotating heat pipe model [Song2003] translated from MatLab by Gemini.
+
+TODO 
+----use object-oriented approach instead of global variables
+"""
 import numpy as np
 import matplotlib.pyplot as plt
 import os
@@ -8,19 +14,17 @@ from scipy.interpolate import interp1d
 np.set_printoptions(precision=10)
 
 # ==============================================================================
-# 1. GLOBAL VARIABLES
+# 1. GLOBAL VARIABLES (initialize here and set in set_global_variables)
 # ==============================================================================
 
-# liquid properties (kl, hfg, rhol, mul, nul, betal, cpl, Pr)
+# liquid properties 
 kl, hfg, rhol, mul, nul, betal, cpl, Pr = [0.0] * 8
-# vapor properties (rhov, muv, nuv)
+# vapor properties 
 rhov, muv, nuv = [0.0] * 3
-# wall, rotor (kw, Ro, Ri, RI, omega, alpha, TC, TE)
+# wall and rotor 
 kw, Ro, Ri, RI, omega, alpha, TC, TE = [0.0] * 8
-# discretization (X, DX, Lc, La, Le, Riae, N, Nc, Na, Ne, mtC_rel_tol,
-#                 dmt_diff_rel_tol, max_inner_iterations, max_outer_iterations,
-#                 NUMZERO, max_restarts, MOD4GEOM)
-X, DX, Lc, La, Le, Riae = [None] * 6
+# discretization parameters
+X, DX, Lc, La, Le, Riae = [0.0] * 6
 N, Nc, Na, Ne = [0] * 4
 mtC_rel_tol, dmt_diff_rel_tol = [0.0] * 2
 max_inner_iterations, max_outer_iterations = [0] * 2
@@ -32,7 +36,6 @@ NUMZERO, max_restarts, MOD4GEOM = [0.0] * 3
 
 def set_global_variables(configuration: int) -> int:
     """
-    Translates the MatLab function set_global_variables.m
     Initializes all physical constants and geometric/discretization arrays.
     """
     print(f"--- Calling set_global_variables({configuration}): Initializing RHP parameters. ---")
@@ -46,17 +49,17 @@ def set_global_variables(configuration: int) -> int:
     global max_inner_iterations, max_outer_iterations, NUMZERO, max_restarts, MOD4GEOM
 
     # --- Discretization Parameters ---
-    Nc = 23
-    Na = 10
-    Ne = 19
+    Nc = 23   # number of FVM in condenser
+    Na = 10   # number of FVM in adiabatic section
+    Ne = 19   # number of FVM in evaporator
     
     NUMZERO = 1e-14
-    dmt_diff_rel_tol = 1e-6
-    max_outer_iterations = 50
+    dmt_diff_rel_tol = 1e-6   # relative tolerance for mass flow difference 
+    max_outer_iterations = 50   
     max_inner_iterations = 100
-    max_restarts = 38
+    max_restarts = 38   # restarts within inner loop
     MOD4GEOM = 50
-    mtC_rel_tol = 1e-2
+    mtC_rel_tol = 1e-2   # iteration tolerance for mass flow at condenser end corresponding to Tsat
 
     # --- Operational Parameters ---
     TC = 60.0    # outer wall temperature (C)
@@ -83,14 +86,14 @@ def set_global_variables(configuration: int) -> int:
     Ro_cae = 0.0254 / 2 # outer radius
 
     # --- Derived Parameters (Calculations) ---
-    N = Nc + Na + Ne - 2 # N = 50
+    N = Nc + Na + Ne - 2 
     
     # 1. Coordinate Generation (X)
     Xc = np.linspace(0, Lc, Nc)
     Xa = Lc + np.linspace(0, La, Na)
     Xe = Lc + La + np.linspace(0, Le, Ne)
     
-    X_flat = np.hstack([Xc, Xa[1:-1], Xe])
+    X_flat = np.concatenate([Xc, Xa[1:-1], Xe])
     X = X_flat.reshape(-1, 1) # Column vector (N x 1)
     
     # 2. Finite Volume Lengths (DX)
@@ -127,10 +130,17 @@ def set_global_variables(configuration: int) -> int:
 
 # --- CORE PHYSICS HELPER FUNCTIONS ---
 
-def look_up_song(dEend2Dmin: float) -> float:
-    """_MOCK_FUNCTION: Looks up initial liquid mass (Placeholder for look_up_song.m)."""
-    # This value is hardcoded in the MatLab example to 0.005 for the smallest dEend2D
-    return 0.005
+def look_up_song(d2D) -> float:
+    """_Looks up initial liquid mass (look_up_song.m)."""
+    d2D_data = np.array([0, 0.011, 0.019, 0.025, 0.036])
+    ml0 = 0.7e-3
+    ml_data = np.array([1, 3, 5, 7, 10]) * ml0
+    interpolation_func = interp1d(d2D_data, ml_data, kind='linear', fill_value="extrapolate")
+    
+    # Berechnung der interpolierten Masse
+    ml = interpolation_func(d2D)
+    
+    return ml
 
 def liquid_volume(delta: np.ndarray, RI: np.ndarray) -> float:
     """Calculates total liquid volume (from liquid_volume.m, implicitly used)."""
@@ -900,16 +910,16 @@ def rhp_outer_loop(dEend: float, Tsat0: float, delta0: np.ndarray, fileID: objec
 
 def run_rhp_model():
     """
-    Main execution function, translating the MatLab script structure.
+    Main execution function
     """
     # 1. INITIAL SETUP
     # plt.close('all') # Not needed in this environment
 
     set_global_variables(1)
 
-    Nd = 5 # Number of dEend discretization points
-    dEend2Dmin = 0.000
-    dEend2Dmax = 0.0058595
+    Nd = 1 # 21 Number of dEend discretization points
+    dEend2Dmin = 0.0
+    dEend2Dmax = 0.035   # 0.035 for Nd=1 and 0.0058595 for Nd=21
 
     if N == 0:
         print("Error: Global variables not set. Exiting.")
@@ -917,6 +927,8 @@ def run_rhp_model():
 
     L = Lc + La + Le
     meanRi = np.mean(Ri)
+    #meanRic = np.mean(Ri[0:Nc-1])   #DK
+    #Di = 2*Riae   #DK
     
     # Initial guess for first run (next runs take previous results as guess)
     dEendmin = (2 * meanRi) * dEend2Dmin
@@ -925,11 +937,11 @@ def run_rhp_model():
     delta_konst = ((ml / rhol) / (2 * np.pi * meanRi) - dEendmin * Le / 2) / (Lc / 2 + La + Le / 2)
     
     # Initial film height profile (linear condenser/evaporator, constant adiabatic)
-    dc0 = np.linspace(0, delta_konst, Nc).reshape(-1, 1)
-    da0_size = Na - 2 
-    da0 = np.ones((da0_size, 1)) * delta_konst
-    de0 = np.linspace(delta_konst, dEendmin, Ne).reshape(-1, 1)
-    delta0 = np.vstack([dc0, da0, de0])
+    dc0 = np.linspace(0, delta_konst, Nc)   #DK.reshape(-1, 1)
+    da0_size = Na - 2   #because first and last node are in dc/de
+    da0 = np.ones(da0_size) * delta_konst
+    de0 = np.linspace(delta_konst, dEendmin, Ne)   #DK.reshape(-1, 1)
+    delta0 = np.concatenate([dc0, da0, de0])
 
     if delta0.shape[0] != N:
         print(f"FATAL ERROR: Initial delta vector size mismatch. Expected {N}, got {delta0.shape[0]}.")
@@ -991,7 +1003,7 @@ def run_rhp_model():
                 print(f"mt1={mt[knc-1]:.10f};") 
                 print(f"d1={delta[knc-1]:.10f};") 
                 print(f"Tsat={Tsat_ss:.10f};")
-            break 
+            break   # no hope to try higher values of dEend
         else:
             print(f"Tsat={Tsat_ss:.2f}°C    liquid mass m={V*rhol*1000:.2f} g    heat flux qc={qc:.2f} W/m^2")
 
