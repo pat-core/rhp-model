@@ -49,17 +49,17 @@ def set_global_variables(configuration: int) -> int:
     global max_inner_iterations, max_outer_iterations, NUMZERO, max_restarts, MOD4GEOM
 
     # --- Discretization Parameters ---
-    Nc = 23   # number of FVM in condenser
-    Na = 10   # number of FVM in adiabatic section
-    Ne = 19   # number of FVM in evaporator
+    Nc = 23   # number of nodes in condenser
+    Na = 10   # number of nodes in adiabatic section
+    Ne = 19   # number of nodes in evaporator
     
     NUMZERO = 1e-14
-    dmt_diff_rel_tol = 1e-6   # relative tolerance for mass flow difference 
+    dmt_diff_rel_tol = 1e-6   # relative tolerance for mass flow difference (inner loop)
     max_outer_iterations = 50   
     max_inner_iterations = 100
     max_restarts = 38   # restarts within inner loop
     MOD4GEOM = 50
-    mtC_rel_tol = 1e-2   # iteration tolerance for mass flow at condenser end corresponding to Tsat
+    mtC_rel_tol = 1e-2   # iteration tolerance for mass flow at condenser end corresponding to Tsat (outer loop)
 
     # --- Operational Parameters ---
     TC = 60.0    # outer wall temperature (C)
@@ -86,19 +86,18 @@ def set_global_variables(configuration: int) -> int:
     Ro_cae = 0.0254 / 2 # outer radius
 
     # --- Derived Parameters (Calculations) ---
-    N = Nc + Na + Ne - 2 
-    
+      
     # 1. Coordinate Generation (X)
     Xc = np.linspace(0, Lc, Nc)
     Xa = Lc + np.linspace(0, La, Na)
     Xe = Lc + La + np.linspace(0, Le, Ne)
     
-    X_flat = np.concatenate([Xc, Xa[1:-1], Xe])
-    X = X_flat.reshape(-1, 1) # Column vector (N x 1)
+    X = np.concatenate([Xc, Xa[1:-1], Xe])
+    N = len(X)  # number of nodes
     
     # 2. Finite Volume Lengths (DX)
-    DX = np.diff(X, axis=0) # Column vector ((N-1) x 1)
-    
+    DX = np.diff(X) # Column vector ((N-1) x 1)
+        
     # 3. Viscosity and Prandtl
     nul = mul / rhol    # kin. viscosity liquid
     nuv = muv / rhov    # kin. viscosity vapour
@@ -113,11 +112,11 @@ def set_global_variables(configuration: int) -> int:
     alpha[:Nc - 1, 0] = alpha_const
     
     # 6. Inner Radius at Nodes (Ri)
-    Ri_cum_sum = np.cumsum(DX * np.sin(alpha), axis=0)
-    Ri = Ric + np.vstack([np.array([[0.0]]), Ri_cum_sum]) # Column vector (N x 1)
+    Ri_cum_sum = np.cumsum(DX * np.sin(alpha))
+    Ri = Ric + np.concatenate([np.array([0.0]), Ri_cum_sum]) # Column vector (N x 1)
     
     # 7. Outer Radius at Nodes (Ro)
-    Ro = np.ones((N, 1)) * Ro_cae # Column vector (N x 1)
+    Ro = np.ones(N) * Ro_cae # Column vector (N x 1)
 
     # 8. Inner Radius at FV Midpoints (RI)
     RI = (Ri[:-1] + Ri[1:]) / 2 # Column vector ((N-1) x 1)
@@ -145,7 +144,8 @@ def liquid_volume(delta: np.ndarray, RI: np.ndarray) -> float:
     """Calculates total liquid volume (liquid_volume.m)"""
     # V = sum(2 * pi * RI_mid * delta_mid * DX)
     delta_mid = (delta[:-1] + delta[1:]) / 2 
-    return np.sum(2 * np.pi * RI.flatten() * delta_mid.flatten() * DX.flatten())
+    Vl = np.sum(2 * np.pi * RI * delta_mid * DX)   # TODO .flatten()?
+    return Vl
 
 def grashof(rim: float, a: float, dTm: float, deltam: float) -> float:
     """Calculates Grashof number (grashof.m)"""
@@ -182,9 +182,9 @@ def liquid_velocities(d0: float, d1: float, mt0: float, dmt: float, ri0: float, 
     uv0 = mt0/(rhov*np.pi*ri0**2)
 
     # Liquid velocity 
-    Vt0 = mt0/rhol;
-    u_avg0 = Vt0/(2*np.pi*ri0*d0); # average
-    uld0 = (b+1)*u_avg0; # vapour interface
+    Vt0 = mt0/rhol
+    u_avg0 = Vt0/(2*np.pi*ri0*d0) # average
+    uld0 = (b+1)*u_avg0 # vapour interface
     
     return uv0, uld0, u_avg0
 
@@ -599,10 +599,10 @@ def rhp_inner_loop(dEend: float, Tsat: float, delta0: np.ndarray):
     diffd0 = np.diff(delta0)
     
     # Boundary conditions at the Evaporator End (Node N, Python index N-1)
-    delta[N-1] = dEend
-    mt[N-1] = 0.0
-    uld[N-1] = 0.0
-    uv[N-1] = 0.0
+    delta[-1] = dEend
+    mt[-1] = 0.0
+    uld[-1] = 0.0
+    uv[-1] = 0.0
     
     d0start = 0.0
     mtC = 0.0
@@ -834,6 +834,7 @@ def rhp_outer_loop(dEend: float, Tsat0: float, delta0: np.ndarray, fileID: objec
 def run_rhp_model():
     """
     Main execution function
+    runs over a set of dEend/D values (filling ratios) and stores results
     """
     # 1. INITIAL SETUP
     # plt.close('all') # Not needed in this environment
