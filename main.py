@@ -174,7 +174,7 @@ def restart_values(N: int) -> np.ndarray:
 
 def liquid_velocities(d0: float, d1: float, mt0: float, dmt: float, ri0: float, dx: float, a: float, b: float):
     """
-    velocity of vapour and liquid top layer (liquid_velocities.m).
+    velocity of vapour and liquid top layer (liquid_velocities.m)
     """
     global rhol, rhov
     
@@ -190,8 +190,7 @@ def liquid_velocities(d0: float, d1: float, mt0: float, dmt: float, ri0: float, 
 
 def heat_transfer_model_mixed_convection(d0: float, d1: float, Two: float, Tsat: float, dx: float, ri: float, ro: float, a: float):
     """
-    Translates heat_transfer_model_mixed_convection.m. 
-    Evaporator heat transfer model (Mixed Convection).
+    Evaporator heat transfer model (mixed_convection.m)
     """
     global kl, hfg, Pr, kw
     
@@ -206,7 +205,7 @@ def heat_transfer_model_mixed_convection(d0: float, d1: float, Two: float, Tsat:
     Nun = 0.133 * Ra**0.375 # Nusselt Number of natural convection
     Num = (Nuf**(7/2) + Nun**(7/2))**(2/7) # and mixed
     
-    if d > NUMZERO: # there is a liquid layer
+    if d > 0: # there is a liquid layer
         Twi = ((Num * kl / d) * Tsat + (kw / ln) * Two) / (kw / ln + Num * kl / d)
     else: # there is no liquid layer
         Twi = Tsat
@@ -217,7 +216,7 @@ def heat_transfer_model_mixed_convection(d0: float, d1: float, Two: float, Tsat:
     Nun = 0.133 * Ra**0.375
     Num = (Nuf**(7/2) + Nun**(7/2))**(2/7)
 
-    if d > NUMZERO:
+    if d > 0:
         Twi = ((Num * kl / d) * Tsat + (kw / ln) * Two) / (kw / ln + Num * kl / d)
     else:
         Twi = Tsat
@@ -230,8 +229,7 @@ def heat_transfer_model_mixed_convection(d0: float, d1: float, Two: float, Tsat:
 
 def liquid_flow_model_mixed_convection(d0: float, d1: float, mt1: float, dx: float, a: float, ri0: float, uv1: float, uld1: float, Twi: float, Tsat: float):
     """
-    Translates liquid_flow_model_mixed_convection.m. 
-    Evaporator mass flow model (Mixed Convection).
+    convection model for evaporator: solve liquid flow model for difference in mass flow (liquid_flow_model_mixed_convection.m)
     """
     global rhol, mul, nul, Pr, rhov, nuv, omega
     
@@ -241,7 +239,7 @@ def liquid_flow_model_mixed_convection(d0: float, d1: float, mt1: float, dx: flo
     deltam = (d0 + d1) / 2
     
     # Cross-sectional area for vapour flow
-    Av = np.pi * (rim - deltam)**2 if (rim - deltam) > NUMZERO else 1e-10 
+    Av = np.pi * (rim - deltam)**2 if (rim - deltam) > NUMZERO else NUMZERO
     
     # Estimate liquid velocities for flow regime determination (using b_forced=2)
     b_forced = 2
@@ -252,150 +250,83 @@ def liquid_flow_model_mixed_convection(d0: float, d1: float, mt1: float, dx: flo
     Gr = grashof(rim, a, dTm, deltam)
     Re = reynolds(deltam, u_avg)
     Ra = Gr * Pr
-    GrRe2 = Gr / (Re**2) if Re > NUMZERO else 1e10 # Use a large value if Re=0
+    GrRe2 = Gr / (Re**2) if Re > NUMZERO else 1/NUMZERO # Use a large value if Re=0
 
     # Velocity profile power law exponent b
     if Ra < 1e9:
         if GrRe2 < 0.1: # forced convection
             b = 2.0
         elif GrRe2 < 10: # mixed convection
-            b = 1/3
+            b = 1.0/3.0
         else:
-            b = 1/4
+            b = 1.0/4.0
     else:
-        b = 1/7 # natural convection
+        b = 1.0/7.0 # natural convection
 
     # Wall friction [Song -> Afzal & Hussain]
-    if Re > NUMZERO:
-        K_fric = Gr / (Re**(5/2))
+    if Re > 0:
+        K_fric = Gr / (Re**(5.0/2.0))
         if K_fric < 1:
             Cfw = 0.5
         else:
-            Cfw = 0.5 * K_fric**(3/5)
+            Cfw = 0.5 * K_fric**(3.0/5.0)
     else:
         Cfw = 0.0
 
     # Vapour friction [Daniels]
     Rev = u_avg * Av / nuv # MatLab uses uv1, but that is 0 on the first pass. Using u_avg is safer if it's the average velocity
-    if Rev > NUMZERO:
+    if Rev > 0:
         if Rev < 2000:
-            Cfd = 16 / Rev
+            Cfd = 16.0 / Rev
         else:
             Cfd = 0.0791 / (Rev**0.25)
     else:
         Cfd = 0.0
 
     # Top velocity from mass flow at x=x1
-    if d1 > NUMZERO and ri1 > NUMZERO:
+    if d1 > 0 and ri1 > 0:
         U1 = mt1 * (b + 1) / (2 * np.pi * ri1 * rhol * d1)
     else:
-        U1 = 0.0 
+        U1 = 0.0    # no liquid, no velocity
     
-    # --- Momentum balance (Quadratic Equation for U0) ---
-    # The MatLab code uses constants 0.1e1=1.0, 0.2e1=2.0, 0.3e1=3.0, 0.4e1=4.0, 0.8e1=8.0, 0.16e2=16.0
-    
-    # Common factors
-    A = Cfw * dx * (b**2) + (3.0/2.0 * Cfw * dx - d0 + d1) * b + Cfw * dx / 2.0
-    B = 2.0 * (b + 1) * A * Av**2 * rhov
-    C = 8.0 * Cfd * rim**2 * rhol * dx * (b + 1.0/2.0) * np.pi**2 * deltam**2
-    D = 4.0 * Cfd * rim**2 * rhol * dx * (b + 1.0/2.0) * np.pi**2 * deltam**2
+    # momentum bilance
+    QP = 0.4e1 * ((b + 1) * Av**2 * ((Cfw * dx * b**2) + (0.3e1 / 0.2e1 * Cfw * dx - d0 + d1) * b + (Cfw * dx) / 0.2e1) * rhov + 0.4e1 * Cfd * rim**2 * rhol * dx * (b + 0.1e1 / 0.2e1) * np.pi**2 * deltam**2) * U1 / (0.2e1 * (b + 1) * ((Cfw * dx * b**2) + (0.3e1 / 0.2e1 * Cfw * dx - d0 + d1) * b + (Cfw * dx) / 0.2e1 + 0.2e1 * deltam) * Av**2 * rhov + 0.8e1 * Cfd * rim**2 * rhol * dx * (b + 0.1e1 / 0.2e1) * np.pi**2 * deltam**2)
+    QQ = (-0.16e2 * rim * Av**2 * omega**2 * ((b + 1)**2) * (b + 0.1e1 / 0.2e1) * rhov * (-d1 + d0) * deltam * np.cos(a) - 0.16e2 * rim * Av**2 * omega**2 * dx * ((b + 1)**2) * (b + 0.1e1 / 0.2e1) * rhov * deltam * np.sin(a) + 0.2e1 * (Av**2 * (Cfw * dx * (b**2) + (0.3e1 / 0.2e1 * Cfw * dx - d0 + d1) * b + Cfw * dx / 0.2e1 - 0.2e1 * deltam) * (b + 1) * rhov + 0.4e1 * Cfd * rim**2 * rhol * dx * (b + 0.1e1 / 0.2e1) * np.pi**2 * deltam**2) * U1**2) / (0.2e1 * (b + 1) * (Cfw * dx * (b**2) + (0.3e1 / 0.2e1 * Cfw * dx - d0 + d1) * b + Cfw * dx / 0.2e1 + 0.2e1 * deltam) * Av**2 * rhov + 0.8e1 * Cfd * rim**2 * rhol * dx * (b + 0.1e1 / 0.2e1) * np.pi**2 * deltam**2)
 
-    # QP (Coefficient of U0)
-    # The MatLab formula for QP is complex and seems to derive from a cubic/quartic or is simplified.
-    # The MatLab code provided for QP:
-    # QP = 0.4e1 * ((b + 1) * Av ^ 2 * A * rhov + D) * U1 
-    #   / (0.2e1 * (b + 1) * (A + 2.0 * deltam) * Av ^ 2 * rhov + C) 
-    
-    # Recalculating MatLab's QP and QQ expression for U0
-    
-    Denominator = 2.0 * (b + 1) * (A + 2.0 * deltam) * Av**2 * rhov + C
-    
-    # Numerator for P * U0 (linear term)
-    Numerator_P = 4.0 * ((b + 1) * Av**2 * A * rhov + D) * U1
-    
-    # QQ (Constant term)
-    # The MatLab formula for QQ:
-    # QQ = (-16.0 * rim * Av ^ 2 * omega ^ 2 * ((b + 1) ^ 2) * (b + 1.0/2.0) * rhov * (-d1 + d0) * deltam * np.cos(a) 
-    #     - 16.0 * rim * Av ^ 2 * omega ^ 2 * dx * ((b + 1) ^ 2) * (b + 1.0/2.0) * rhov * deltam * np.sin(a) 
-    #     + 2.0 * (Av ^ 2 * (A - 2.0 * deltam) * (b + 1) * rhov + D) * U1 ** 2) / Denominator
-    
-    # Note: There is a discrepancy in the MatLab formula for `A` vs `A - 2.0 * deltam`. 
-    # I will stick strictly to the MatLab expression structure using the variables defined:
-
-    # Re-calculating using MatLab's variable names for clarity, despite potential issues
-    A_matlab_expr = Cfw * dx * (b ** 2) + (3.0 / 2.0 * Cfw * dx - d0 + d1) * b + Cfw * dx / 2.0
-    
-    QP_num = 4.0 * ((b + 1) * Av**2 * A_matlab_expr * rhov + D) * U1
-    QP_den = 2.0 * (b + 1) * (A_matlab_expr + 2.0 * deltam) * Av**2 * rhov + C
-
-    if QP_den < NUMZERO:
-        QP = 0.0
-    else:
-        QP = QP_num / QP_den
-
-    QQ_num_term1 = -16.0 * rim * Av**2 * omega**2 * (b + 1)**2 * (b + 0.5) * rhov * (d0 - d1) * deltam * np.cos(a)
-    QQ_num_term2 = -16.0 * rim * Av**2 * omega**2 * dx * (b + 1)**2 * (b + 0.5) * rhov * deltam * np.sin(a)
-    
-    # Note on A vs (A - 2*deltam): I will assume the MatLab code intended the expression with -2*deltam for the U1^2 term.
-    A_prime_matlab_expr = Cfw * dx * (b ** 2) + (3.0 / 2.0 * Cfw * dx - d0 + d1) * b + Cfw * dx / 2.0 - 2.0 * deltam
-    
-    QQ_num_term3 = 2.0 * (Av**2 * (b + 1) * rhov * A_prime_matlab_expr + D) * U1**2
-    QQ_num = QQ_num_term1 + QQ_num_term2 + QQ_num_term3
-    
-    if QP_den < NUMZERO:
-        QQ = 0.0
-    else:
-        QQ = QQ_num / QP_den
-    
-    # Solve Quadratic Equation: U0^2 + QP*U0 + QQ = 0
-    # U0 = (-QP / 2) +/- sqrt((QP / 2)^2 - QQ)
-    
-    DISCRIMI = (QP/2)**2 - QQ
-    
+    DISCRIMI=(QP/2)**2-QQ
     if DISCRIMI >= 0:
-        # Prefer higher value (as per MatLab comment)
-        U0 = (-QP/2) + np.sqrt(DISCRIMI) 
+        U0 = (-QP/2)+np.sqrt(DISCRIMI); #prefer higher value (TODO check)
     else:
-        U0 = 0.0
-        print('No real solution for U0 in liquid_flow_model_mixed_convection (evaporator). Setting U0=0.')
+        U0 = 0
+        print('No real solution for U0 in liquid_flow_model_mixed_convection (evaporator).')
     
-    # Final mass flow rate and difference
-    mt0 = U0 * (2 * np.pi * ri0 * rhol * d1) / (b + 1)
-    dmt = mt1 - mt0
+    # top velocity from mass flow at x=x1 and mass flow difference
+    mt0 = U0*(2*np.pi*ri0*rhol*d1)/(b+1)
+    dmt = mt1-mt0
 
     return dmt, b
 
 def liquid_flow_model_film_condensation(d0: float, d1: float, mt1: float, dx: float, a: float, ri0: float, uv: float, uld: float):
     """
-    Translates liquid_flow_model_film_condensation.m.
-    Condenser/Adiabatic mass flow model (Film Condensation).
+    Condenser/Adiabatic: solve liquid flow model for difference in mass flow (liquid_flow_model_film_condensation.m)
     """
     global rhol, mul, omega
     
     # Solve for dmt=Z/N, where mt1 = mt0 + dmt
-    
-    Z1_term1 = mt1
-    Z1_term2 = (rhol / mul) * (omega**2) * ri0 * (np.sin(a) - np.cos(a) * (d1 - d0) / dx) * (1/3) * (d0**3) * 2 * np.pi * ri0 * rhol
-    Z1 = Z1_term1 - Z1_term2
-    
-    N1_term1 = 1.0
-    N1_term2 = (1/2) * ((d0**2) / (mul * dx)) * (uv * np.cos(a) + uld) * 2 * np.pi * ri0 * rhol
-    N1 = N1_term1 - N1_term2
-    
+    Z1 = mt1-(rhol/mul)*(omega**2)*ri0*(np.sin(a)-np.cos(a)*(d1-d0)/dx)*(1/3)*(d0^3)*2*np.pi*ri0*rhol
+    N1 = 1-(1/2)*((d0**2)/(mul*dx))*(uv*np.cos(a)+uld)*2*np.pi*ri0*rhol
     if N1 > NUMZERO:
         dmt = Z1 / N1
     else:
-        # Avoid division by zero, setting dmt to an unlikely large value to force a restart
-        dmt = 1e10 
+        dmt = 1/NUMZERO
 
-    b = 2.0 # Power law exponent for Film Condensation is 2
+    b = 2.0 
     
     return dmt, b
 
 def heat_transfer_model_film_condensation(d0: float, d1: float, Two: float, Tsat: float, dx: float, ri: float, ro: float):
     """
-    Translates heat_transfer_model_film_condensation.m.
-    Condenser heat transfer model (Film Condensation).
+    solve liquid flow model for difference in mass flow (heat_transfer_model_film_condensation.m)
     """
     global kl, hfg, kw
     
@@ -403,7 +334,7 @@ def heat_transfer_model_film_condensation(d0: float, d1: float, Two: float, Tsat
     d = (d0 + d1) / 2
     ln = ri * np.log(ro / ri)
     
-    if d > NUMZERO: # there is a liquid layer
+    if d > 0: # there is a liquid layer
         Twi = ((kl / d) * Tsat + (kw / ln) * Two) / (kw / ln + kl / d)
     else: # there is no liquid layer
         Twi = Tsat
@@ -413,26 +344,24 @@ def heat_transfer_model_film_condensation(d0: float, d1: float, Two: float, Tsat
     
     return dmt, Twi, qw
 
-# --- FV ITERATION FUNCTIONS (Translated from MatLab) ---
+# --- ITERATIONS OVER FINITE VOLUMES (1D) ---
 
-def iterate_fv_evaporator(d0start: float, d1: float, mt1: float, uv1: float, uld1: float, Tsat: float, k_matlab: int):
+def iterate_fv_evaporator(d0start: float, d1: float, mt1: float, uv1: float, uld1: float, Tsat: float, k: int):
     """
-    Translates iterate_fv_evaporator.m. Solves the mass balance (dmt_ht = dmt_lf)
-    for the upstream liquid film height d0 using Regula Falsi (Mixed Convection model).
-    k_matlab: MatLab 1-based index of the downstream node.
+    Solves the mass balance dmt_ht = dmt_lf by regula falsi (iterate_fv_evaporator.m)
     """
     global Ro, Ri, alpha, TE
     global DX, dmt_diff_rel_tol, max_inner_iterations, max_restarts, NUMZERO
 
-    fv_idx = k_matlab - 2 # Python FV index (0 to N-2)
+    fv_idx = k - 2   #TODO check 
     
-    dx = DX[fv_idx].item()
-    a = alpha[fv_idx].item()
+    dx = DX[fv_idx]
+    a = alpha[fv_idx]
     
     # ri=Ri(k-1)/2 + Ri(k)/2; mid-point values
-    ri = (Ri[fv_idx].item() + Ri[fv_idx+1].item()) / 2 
-    ro = (Ro[fv_idx].item() + Ro[fv_idx+1].item()) / 2 
-    ri0 = Ri[fv_idx].item() # index of left node (x=x0)
+    ri = (Ri[fv_idx] + Ri[fv_idx+1]) / 2 
+    ro = (Ro[fv_idx] + Ro[fv_idx+1]) / 2 
+    ri0 = Ri[fv_idx] # index of left node (x=x0)
     
     K = restart_values(max_restarts)
     
@@ -457,15 +386,15 @@ def iterate_fv_evaporator(d0start: float, d1: float, mt1: float, uv1: float, uld
         [dmt_ht, Tw, qw] = heat_transfer_model_mixed_convection(d0, d1, TE, Tsat, dx, ri, ro, a)
         [dmt_lf, b_lf] = liquid_flow_model_mixed_convection(d0, d1, mt1, dx, a, ri0, uv1, uld1, Tw, Tsat)
         
-        dmt_diff_rel = abs(dmt_ht - dmt_lf) / (abs(dmt_ht) + abs(dmt_lf)) if (abs(dmt_ht) + abs(dmt_lf)) > NUMZERO else 1.0
+        dmt_diff_rel = abs(dmt_ht - dmt_lf) / (abs(dmt_ht) + abs(dmt_lf)) if (abs(dmt_ht) + abs(dmt_lf)) > 0 else 1.0
         
         fz = (dmt_ht - dmt_lf) # function to be iterated to zero
         
         if iteration_count == 1: 
             if fz > 0:
-                d0next = (4/5) * d0
+                d0next = (4.0/5.0) * d0
             else:
-                d0next = (5/4) * d0
+                d0next = (5.0/4.0) * d0
         else: # Regula Falsi
             if abs(fz - fzprev) < NUMZERO: # Avoid division by zero in Regula Falsi
                  d0next = d0 * 0.99 
@@ -478,7 +407,7 @@ def iterate_fv_evaporator(d0start: float, d1: float, mt1: float, uv1: float, uld
         
         if (d0next < 0) or np.isnan(d0next):
             restart_count += 1
-            if restart_count >= max_restarts: break # Safety break
+            #if restart_count >= max_restarts: break # Safety break
             
             # Restart condition based on restart factors K
             if d0start == 0:
@@ -496,23 +425,20 @@ def iterate_fv_evaporator(d0start: float, d1: float, mt1: float, uv1: float, uld
     
     return d0, mt0, uv0, uld0, Tw, qw, iteration_count, restart_count
 
-def iterate_fv_condenser(d0start: float, d1: float, mt1: float, uv1: float, uld1: float, Tsat: float, k_matlab: int):
+def iterate_fv_condenser(d0start: float, d1: float, mt1: float, uv1: float, uld1: float, Tsat: float, k: int):
     """
-    Translates iterate_fv_condenser.m. Solves the mass balance (dmt_ht = dmt_lf)
-    for the upstream liquid film height d0 using Regula Falsi (Film Condensation model).
-    k_matlab: MatLab 1-based index of the downstream node.
+    Solves the mass balance dmt_ht = dmt_lf by regula falsi (iterate_fv_condenser.m)
     """
     global Ro, Ri, alpha, TC
-    global DX, dmt_diff_rel_tol, max_inner_iterations, max_restarts, MOD4GEOM, NUMZERO
+    global DX, dmt_diff_rel_tol, max_inner_iterations, max_restarts, MOD4GEOM
 
-    fv_idx = k_matlab - 2 # Python FV index (0 to N-2)
+    fv_idx = k - 2  # TODO check
 
-    dx = DX[fv_idx].item()
-    a = alpha[fv_idx].item()
-    
-    ri = (Ri[fv_idx].item() + Ri[fv_idx+1].item()) / 2 
-    ro = (Ro[fv_idx].item() + Ro[fv_idx+1].item()) / 2 
-    ri0 = Ri[fv_idx].item() # index of left node (x=x0)
+    dx = DX[fv_idx]
+    a = alpha[fv_idx]
+    ri = (Ri[fv_idx] + Ri[fv_idx+1]) / 2 
+    ro = (Ro[fv_idx] + Ro[fv_idx+1]) / 2 
+    ri0 = Ri[fv_idx] # index of left node (x=x0)
     
     K = restart_values(max_restarts)
     
@@ -537,7 +463,7 @@ def iterate_fv_condenser(d0start: float, d1: float, mt1: float, uv1: float, uld1
         [dmt_lf, b_lf] = liquid_flow_model_film_condensation(d0, d1, mt1, dx, a, ri0, uv1, uld1)
         [dmt_ht, Tw, qw] = heat_transfer_model_film_condensation(d0, d1, TC, Tsat, dx, ri, ro)
         
-        dmt_diff_rel = abs(dmt_ht - dmt_lf) / (abs(dmt_ht) + abs(dmt_lf)) if (abs(dmt_ht) + abs(dmt_lf)) > NUMZERO else 1.0
+        dmt_diff_rel = abs(dmt_ht - dmt_lf) / (abs(dmt_ht) + abs(dmt_lf)) if (abs(dmt_ht) + abs(dmt_lf)) > 0 else 1.0
         
         fz = (dmt_ht - dmt_lf)
         
@@ -547,7 +473,7 @@ def iterate_fv_condenser(d0start: float, d1: float, mt1: float, uv1: float, uld1
             else:
                 d0next = (5/4) * d0
         else: # Regula Falsi
-            if abs(fz - fzprev) < NUMZERO:
+            if abs(fz - fzprev) < 0:
                  d0next = d0 * 0.99
             else:
                  d0next = d0 - fz * (d0 - d0prev) / (fz - fzprev)
@@ -558,7 +484,7 @@ def iterate_fv_condenser(d0start: float, d1: float, mt1: float, uv1: float, uld1
         
         if (d0next < 0) or np.isnan(d0next):
             restart_count += 1
-            if restart_count >= max_restarts: break
+            #if restart_count >= max_restarts: break
             
             if d0start == 0:
                 d0 = K[restart_count-1] * d1
@@ -579,16 +505,14 @@ def iterate_fv_condenser(d0start: float, d1: float, mt1: float, uv1: float, uld1
     
     return d0, mt0, uv0, uld0, Tw, qw, iteration_count, restart_count
 
-def iterate_fv_adiabatic(d0start: float, d1: float, mt1: float, uv1: float, uld1: float, Tsat: float, k_matlab: int):
+def iterate_fv_adiabatic(d0start: float, d1: float, mt1: float, uv1: float, uld1: float, Tsat: float, k: int):
     """
-    Translates iterate_fv_adiabatic.m. Solves for d0 where dmt_lf = 0
-    (zero mass transfer) using Regula Falsi (Film Condensation liquid flow model).
-    k_matlab: MatLab 1-based index of the downstream node.
+    Solves for d0 where dmt_lf = 0 by regula falsi (iterate_fv_adiabatic.m)
     """
     global Ri, alpha
     global DX, NUMZERO, max_inner_iterations, max_restarts
 
-    fv_idx = k_matlab - 2 # Python FV index (0 to N-2)
+    fv_idx = k - 2 # TODO check
 
     dx = DX[fv_idx].item()
     a = alpha[fv_idx].item()
@@ -621,9 +545,9 @@ def iterate_fv_adiabatic(d0start: float, d1: float, mt1: float, uv1: float, uld1
         
         if iteration_count == 1:
             if fz > 0:
-                d0next = (4/5) * d0
+                d0next = (4.0/5.0) * d0
             else:
-                d0next = (5/4) * d0
+                d0next = (5.0/4.0) * d0
         else: # Regula Falsi
             if abs(fz - fzprev) < NUMZERO:
                  d0next = d0 * 0.99
@@ -634,7 +558,7 @@ def iterate_fv_adiabatic(d0start: float, d1: float, mt1: float, uv1: float, uld1
         
         if np.isnan(d0next) or d0next < 0:
             restart_count += 1
-            if restart_count >= max_restarts: break
+            #if restart_count >= max_restarts: break
             d0 = K[restart_count-1] * d0start
         else:
             d0 = d0next
@@ -646,15 +570,13 @@ def iterate_fv_adiabatic(d0start: float, d1: float, mt1: float, uv1: float, uld1
     # Final velocity calculation
     [uv0, uld0, _] = liquid_velocities(d0, d1, mt0, dmt, ri0, dx, a, b_lf)
     
-    # Tw and qw are constant return values in Adiabatic section
     return d0, mt0, uv0, uld0, Tw, qw, iteration_count, restart_count
+
+# --- ITERATIONS OVER FINITE VOLUMES (inner) and OVER Tsat (outer) ---
 
 def rhp_inner_loop(dEend: float, Tsat: float, delta0: np.ndarray):
     """
-    Translates rhp_inner_loop.m.
-    Iterates equations for each FV from evaporator end to condenser end.
-    
-    Returns: QC, QE, mtC, delta, mt, uld, uv, Tw, d0start, knc, FViterations, FVrestarts
+    Iterates equations for each FV from evaporator end to condenser end rhp_inner_loop.m. 
     """
     global RI
     global X, N, Nc, Na, DX, max_inner_iterations, NUMZERO, max_restarts
@@ -686,7 +608,7 @@ def rhp_inner_loop(dEend: float, Tsat: float, delta0: np.ndarray):
     mtC = 0.0
     
     i = N - 1 # Start at last node (Evaporator end, Python index N-1)
-    k_matlab = N # MatLab node index (N)
+    k_matlab = N # TODO check 
     
     while i > 0:
         fv_idx = i - 1
@@ -716,7 +638,6 @@ def rhp_inner_loop(dEend: float, Tsat: float, delta0: np.ndarray):
             Tw[fv_idx] = Twi 
             
         else: # Condenser (FV indices 0 to Nc-2)
-            # delta(Nc) is delta[Nc-1]. delta0(Nc) is delta0[Nc-1]
             d0start = min(delta0[fv_idx] * delta[Nc-1] / delta0[Nc-1], d1)
             results = iterate_fv_condenser(d0start, d1, mt1, uv1, uld1, Tsat, k_matlab)
             d0, mt0, uv0, uld0, Twi, qw, inner_iteration_count, restart_count = results
@@ -761,10 +682,10 @@ def rhp_inner_loop(dEend: float, Tsat: float, delta0: np.ndarray):
         
     return QC, QE, mtC, delta.flatten(), mt.flatten(), uld.flatten(), uv.flatten(), Tw.flatten(), d0start, knc, FViterations, FVrestarts
 
+
 def rhp_outer_loop(dEend: float, Tsat0: float, delta0: np.ndarray, fileID: object):
     """
-    Translates rhp_outer_loop.m
-    Iterates over Tsat to find steady state where mtC is close to zero.
+    Iterates over Tsat to find steady state where mtC is close to zero (rhp_outer_loop.m)
     """
     
     # Use global variables
@@ -776,7 +697,6 @@ def rhp_outer_loop(dEend: float, Tsat0: float, delta0: np.ndarray, fileID: objec
     Ac = np.sum(2 * np.pi * RI[:Nc-1].flatten() * DX[:Nc-1].flatten())
 
     # --- Generate Tsat-grid ---
-    # LOGN = (1 - logspace(-2, 0, max_outer_iterations)) * 100/99;
     LOGN = (1 - np.logspace(-2, 0, max_outer_iterations)) * (100.0 / 99.0)
     Tsat_v = TC + NUMZERO + LOGN * (Tsat0 - TC)
     
@@ -793,11 +713,11 @@ def rhp_outer_loop(dEend: float, Tsat0: float, delta0: np.ndarray, fileID: objec
         
         QCE = (QC + QE)
         QCE_abs_sum = np.abs(QC) + np.abs(QE)
-        QCE_rel = QCE / QCE_abs_sum if QCE_abs_sum > NUMZERO else 0.0
+        QCE_rel = QCE / QCE_abs_sum if abs(QCE_abs_sum) > NUMZERO else 1.0/NUMZERO
         QCE_rel_v[outer_iteration_count] = QCE_rel
         
         mt_max_current = np.max(mt)
-        mtC_rel = mtC / mt_max_current if mt_max_current > NUMZERO else 0.0
+        mtC_rel = mtC / mt_max_current if abs(mt_max_current) > NUMZERO else 1.0/NUMZERO
         mtC_rel_v[outer_iteration_count] = mtC_rel
         knc_v[outer_iteration_count] = knc
 
@@ -827,15 +747,34 @@ def rhp_outer_loop(dEend: float, Tsat0: float, delta0: np.ndarray, fileID: objec
 
     QCE = (QC + QE)
     QCE_abs_sum = np.abs(QC) + np.abs(QE)
-    QCE_rel = QCE / QCE_abs_sum if QCE_abs_sum > NUMZERO else 0.0
+    QCE_rel = QCE / QCE_abs_sum if QCE_abs_sum > NUMZERO else 1.0/NUMZERO
     
     mt_max = np.max(mt)
-    mtC_rel = mtC / mt_max if mt_max > NUMZERO else 0.0
+    mtC_rel = mtC / mt_max if abs(mt_max) > NUMZERO else 1.0/NUMZERO
 
     # --- Convergence Info Logging ---
-    delta_max = np.max(delta) if np.max(delta) > NUMZERO else 1.0
-    #log_line_1 = f'mtC_rel={mtC_rel:.12f}    QCE_rel={QCE_rel:.12f}    deltaC/max(delta)={delta[0]/delta_max:.4f}    QC={QC:.2f} QE={QE:.2f}    converged={count_converged}/{max_outer_iterations} \n'
-    #fileID.write(log_line_1)  # TODO enable again
+    # Make sure we format scalars (not arrays) in the log string to avoid TypeError
+    delta_max = np.max(delta) if np.max(delta) > NUMZERO else 1.0/NUMZERO
+    # delta may be an array; extract first element safely
+    try:
+        deltaC = float(np.asarray(delta).ravel()[0])
+    except Exception:
+        deltaC = float(delta) if np.isscalar(delta) else 0.0
+
+    # QC and QE might be numpy types; convert to python floats for formatting
+    try:
+        QC_val = float(QC)
+    except Exception:
+        QC_val = 0.0
+    try:
+        QE_val = float(QE)
+    except Exception:
+        QE_val = 0.0
+
+    log_line_1 = (f'mtC_rel={float(mtC_rel):.12f}    QCE_rel={float(QCE_rel):.12f}    '
+                  f'deltaC/max(delta)={deltaC/delta_max:.4f}    QC={QC_val:.2f} QE={QE_val:.2f}    '
+                  f'converged={count_converged}/{max_outer_iterations} \n')
+    fileID.write(log_line_1)  
     
     valid_iterations = FViterations[FViterations > 0]
     if len(valid_iterations) > 0:
@@ -880,7 +819,7 @@ def rhp_outer_loop(dEend: float, Tsat0: float, delta0: np.ndarray, fileID: objec
         Re = reynolds(deltam, Um)
         Re2 = Re**2
 
-        if Re2 > NUMZERO: 
+        if Re2 > 0: 
             GrRe2[k] = Gr / Re2
         else:
             GrRe2[k] = 0.0
@@ -899,9 +838,9 @@ def run_rhp_model():
     # 1. INITIAL SETUP
     # plt.close('all') # Not needed in this environment
 
-    set_global_variables(1)
+    set_global_variables(1)   # parameter to choose configuration, right now there is only one
 
-    Nd = 1 # 21 Number of dEend discretization points
+    Nd = 1 # 21 Number of dEend discretization points (different filling ratios)
     dEend2Dmin = 0.0
     dEend2Dmax = 0.035   # 0.035 for Nd=1 and 0.0058595 for Nd=21
 
@@ -978,7 +917,7 @@ def run_rhp_model():
         
         if (knc > 0) or (count_converged < 2):
             print('_')
-            print(f"WARNING, solution not converged for DEend/D={dEend2D:.6f}")
+            print(f"WARNING, solution not converged for dEend/D={dEend2D:.6f}")
             print(f"count_converged={count_converged};")
             if (knc > 1):
                 print("DEBUG INFO")
