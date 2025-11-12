@@ -131,76 +131,60 @@ def set_global_variables(configuration: int) -> int:
 # --- CORE PHYSICS HELPER FUNCTIONS ---
 
 def look_up_song(d2D) -> float:
-    """_Looks up initial liquid mass (look_up_song.m)."""
+    """Looks up liquid mass as function of film height at evaporator end cap (look_up_song.m)"""
     d2D_data = np.array([0, 0.011, 0.019, 0.025, 0.036])
     ml0 = 0.7e-3
     ml_data = np.array([1, 3, 5, 7, 10]) * ml0
     interpolation_func = interp1d(d2D_data, ml_data, kind='linear', fill_value="extrapolate")
     
-    # Berechnung der interpolierten Masse
     ml = interpolation_func(d2D)
     
     return ml
 
 def liquid_volume(delta: np.ndarray, RI: np.ndarray) -> float:
-    """Calculates total liquid volume (from liquid_volume.m, implicitly used)."""
+    """Calculates total liquid volume (liquid_volume.m)"""
     # V = sum(2 * pi * RI_mid * delta_mid * DX)
     delta_mid = (delta[:-1] + delta[1:]) / 2 
     return np.sum(2 * np.pi * RI.flatten() * delta_mid.flatten() * DX.flatten())
 
-def grashof(R: float, alpha: float, dT: float, delta: float) -> float:
-    """Calculates Grashof number (Gr)."""
+def grashof(rim: float, a: float, dTm: float, deltam: float) -> float:
+    """Calculates Grashof number (grashof.m)"""
     global rhol, betal, mul, omega
-    g_eff = R * omega**2 
-    Gr = rhol**2 * betal * g_eff * delta**3 * dT / mul**2 
+    
+    Gr = np.abs( (omega**2)*rim*np.cos(a)*betal*dTm*(deltam**3)/(nul**2) )
     return Gr
 
-def reynolds(delta: float, U: float) -> float:
-    """Calculates Reynolds number (Re)."""
+def reynolds(d: float, U: float) -> float:
+    """Calculates Reynolds number (reynold.m)"""
     global nul
-    Re = U * delta / nul
+    Re=abs( 4*U*d/nul )
     return Re
     
 def restart_values(N: int) -> np.ndarray:
-    """Translates restart_values.m. Generates restart correction factors K."""
+    """Generates restart correction factors K (restart_values.m)"""
     K = np.zeros(N + 1)
     N2 = N // 2
     N21 = N2 + 1
 
-    for k in range(1, N2 + 1):
-        # MatLab k=1:N2
-        # Python k=1:N2 inclusive
-        # K(2*k-1) -> K[2*k - 2]
-        # K(2*k)   -> K[2*k - 1]
-        K[2 * k - 2] = (N21 - k) / N21
-        K[2 * k - 1] = N21 / (N21 - k)
+    for k in range(N2):
+        K[2 * k ] = (N21 - k) / N21
+        K[2 * k + 1] = N21 / (N21 - k)
 
-    # Note: K is N+1 long, but only K[0] to K[N-1] (N values) are used for restarts
-    return K[:N]
+    return K
 
 def liquid_velocities(d0: float, d1: float, mt0: float, dmt: float, ri0: float, dx: float, a: float, b: float):
     """
-    Translates liquid_velocities.m. 
-    Velocity of vapour and liquid top layer at left side of given FVM (x=x0).
+    velocity of vapour and liquid top layer (liquid_velocities.m).
     """
     global rhol, rhov
     
     # Vapour velocity
-    Av_pi = np.pi * ri0**2
-    if Av_pi > NUMZERO and rhov > NUMZERO:
-        uv0 = mt0 / (rhov * Av_pi)
-    else:
-        uv0 = 0.0
+    uv0 = mt0/(rhov*np.pi*ri0**2)
 
-    # Liquid velocity (simplified, based on power law exponent b)
-    Vt0 = mt0 / rhol
-    
-    if d0 > NUMZERO and ri0 > NUMZERO:
-        u_avg0 = Vt0 / (2 * np.pi * ri0 * d0) # average
-    else:
-        u_avg0 = 0.0
-
-    uld0 = (b + 1) * u_avg0 # vapour interface
+    # Liquid velocity 
+    Vt0 = mt0/rhol;
+    u_avg0 = Vt0/(2*np.pi*ri0*d0); # average
+    uld0 = (b+1)*u_avg0; # vapour interface
     
     return uv0, uld0, u_avg0
 
