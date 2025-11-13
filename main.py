@@ -298,7 +298,7 @@ def liquid_flow_model_mixed_convection(d0: float, d1: float, mt1: float, dx: flo
         U0 = (-QP/2)+np.sqrt(DISCRIMI); #prefer higher value (TODO check)
     else:
         U0 = 0
-        print('No real solution for U0 in liquid_flow_model_mixed_convection (evaporator).')
+        #print('No real solution for U0 in liquid_flow_model_mixed_convection (evaporator).')    # TODO logging but only once
     
     # top velocity from mass flow at x=x1 and mass flow difference
     mt0 = U0*(2*np.pi*ri0*rhol*d1)/(b+1)
@@ -313,9 +313,9 @@ def liquid_flow_model_film_condensation(d0: float, d1: float, mt1: float, dx: fl
     global rhol, mul, omega
     
     # Solve for dmt=Z/N, where mt1 = mt0 + dmt
-    Z1 = mt1-(rhol/mul)*(omega**2)*ri0*(np.sin(a)-np.cos(a)*(d1-d0)/dx)*(1/3)*(d0^3)*2*np.pi*ri0*rhol
+    Z1 = mt1-(rhol/mul)*(omega**2)*ri0*(np.sin(a)-np.cos(a)*(d1-d0)/dx)*(1/3)*(d0**3)*2*np.pi*ri0*rhol
     N1 = 1-(1/2)*((d0**2)/(mul*dx))*(uv*np.cos(a)+uld)*2*np.pi*ri0*rhol
-    if N1 > NUMZERO:
+    if N1 > 0:
         dmt = Z1 / N1
     else:
         dmt = 1/NUMZERO
@@ -632,13 +632,13 @@ def rhp_inner_loop(dEend: float, Tsat: float, delta0: np.ndarray):
             
         elif k > Nc - 1: # Adiabatic (FV indices Nc-1 to Nc+Na-2)
             d0start = d1
-            results = iterate_fv_adiabatic(d0start, d1, mt1, uv1, uld1, Tsat, k_matlab)
+            results = iterate_fv_adiabatic(d0start, d1, mt1, uv1, uld1, Tsat, k)
             d0, mt0, uv0, uld0, Twi, qw, inner_iteration_count, restart_count = results
             Tw[k-1] = Twi 
             
         else: # Condenser (FV indices 0 to Nc-2)
             d0start = min(delta0[k-1] * delta[Nc-1] / delta0[Nc-1], d1)
-            results = iterate_fv_condenser(d0start, d1, mt1, uv1, uld1, Tsat, k_matlab)
+            results = iterate_fv_condenser(d0start, d1, mt1, uv1, uld1, Tsat, k)
             d0, mt0, uv0, uld0, Twi, qw, inner_iteration_count, restart_count = results
             Tw[k-1] = Twi
             QC += qw * 2 * np.pi * RI[k-1] * DX[k-1]
@@ -818,10 +818,9 @@ def run_rhp_model():
 
     set_global_variables(1)   # parameter to choose configuration, right now there is only one
 
-    Nd = 2 # 21 Number of dEend discretization points (different filling ratios)
-    dEend2Dmin = 0.0
-    dEend2Dmax = 0.035   # 0.035 for Nd=1 and 0.0058595 for Nd=21
-
+    Nd = 1 # 21 Number of dEend discretization points (different filling ratios)
+    dEend2Dmin = 0.001       # 0.000  (for Nd=1 min value is chosen and max ignored)
+    dEend2Dmax = 0.035   # 0.035, 0.0058595 
 
     L = Lc + La + Le
     meanRi = np.mean(Ri)
@@ -834,7 +833,7 @@ def run_rhp_model():
     
     # Initial film height profile (linear condenser/evaporator, constant adiabatic)
     dc0 = np.linspace(0, delta_konst, Nc)   #DK.reshape(-1, 1)
-    da0_size = Na - 2   #because first and last node are in dc/de
+    da0_size = Na - 2   #because first and last node are in dc/de, same as for X
     da0 = np.ones(da0_size) * delta_konst
     de0 = np.linspace(delta_konst, dEendmin, Ne)   #DK.reshape(-1, 1)
     delta0 = np.concatenate([dc0, da0, de0])
@@ -865,7 +864,6 @@ def run_rhp_model():
     Tsat0 = (TC + TE) / 2 # Initial guess for Tsat
 
     knc = N
-    kk = 0 
     for kk in range(Nd): 
         dEend2D = dEend2Dinput[kk]
         dEend = (2 * meanRi) * dEend2D
