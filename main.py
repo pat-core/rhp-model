@@ -2,7 +2,7 @@
 Python-implementation of rotating heat pipe model [Song2003] translated from MatLab by Gemini.
 
 TODO 
-----use object-oriented approach instead of global variables
+----use object-oriented approach instead of global variables (instance gets operational parameters as arguments)
 """
 import numpy as np
 import matplotlib.pyplot as plt
@@ -107,9 +107,9 @@ def set_global_variables(configuration: int) -> int:
     omega = (rpm / 60) * 2 * np.pi
     
     # 5. Taper Angle (alpha)
-    alpha = np.zeros((N - 1, 1))
+    alpha = np.zeros(N - 1)
     alpha_const = np.arctan((Riae - Ric) / Lc)
-    alpha[:Nc - 1, 0] = alpha_const
+    alpha[:Nc - 1] = alpha_const
     
     # 6. Inner Radius at Nodes (Ri)
     Ri_cum_sum = np.cumsum(DX * np.sin(alpha))
@@ -607,80 +607,78 @@ def rhp_inner_loop(dEend: float, Tsat: float, delta0: np.ndarray):
     d0start = 0.0
     mtC = 0.0
     
-    i = N - 1 # Start at last node (Evaporator end, Python index N-1)
-    k_matlab = N # TODO check 
-    
-    while i > 0:
-        fv_idx = i - 1
+    k = N - 1 
         
-        d1 = delta[i]
-        mt1 = mt[i]
-        uld1 = uld[i]
-        uv1 = uv[i]
+    while k > 0:
+        
+        
+        d1 = delta[k]
+        mt1 = mt[k]
+        uld1 = uld[k]
+        uv1 = uv[k]
         
         inner_iteration_count = 0
         restart_count = 0
         qw = 0.0
         Twi = 0.0
         
-        # --- Section Check (MatLab k = i+1) ---
-        if k_matlab >= Nc + Na: # Evaporator (FV indices Nc+Na-1 to N-2)
-            d0start = max(d1 - diffd0[fv_idx], delta0[fv_idx])
-            results = iterate_fv_evaporator(d0start, d1, mt1, uv1, uld1, Tsat, k_matlab)
+        
+        if k > Nc + Na - 2: # Evaporator 
+            d0start = max(d1 - diffd0[k-1], delta0[k-1])
+            results = iterate_fv_evaporator(d0start, d1, mt1, uv1, uld1, Tsat, k)
             d0, mt0, uv0, uld0, Twi, qw, inner_iteration_count, restart_count = results
-            Tw[fv_idx] = Twi
-            QE += qw * 2 * np.pi * RI[fv_idx] * DX[fv_idx]
+            Tw[k-1] = Twi
+            QE += qw * 2 * np.pi * RI[k-1] * DX[k-1]
             
-        elif k_matlab > Nc: # Adiabatic (FV indices Nc-1 to Nc+Na-2)
+        elif k > Nc - 1: # Adiabatic (FV indices Nc-1 to Nc+Na-2)
             d0start = d1
             results = iterate_fv_adiabatic(d0start, d1, mt1, uv1, uld1, Tsat, k_matlab)
             d0, mt0, uv0, uld0, Twi, qw, inner_iteration_count, restart_count = results
-            Tw[fv_idx] = Twi 
+            Tw[k-1] = Twi 
             
         else: # Condenser (FV indices 0 to Nc-2)
-            d0start = min(delta0[fv_idx] * delta[Nc-1] / delta0[Nc-1], d1)
+            d0start = min(delta0[k-1] * delta[Nc-1] / delta0[Nc-1], d1)
             results = iterate_fv_condenser(d0start, d1, mt1, uv1, uld1, Tsat, k_matlab)
             d0, mt0, uv0, uld0, Twi, qw, inner_iteration_count, restart_count = results
-            Tw[fv_idx] = Twi
-            QC += qw * 2 * np.pi * RI[fv_idx] * DX[fv_idx]
+            Tw[k-1] = Twi
+            QC += qw * 2 * np.pi * RI[k-1] * DX[k-1]
 
-        # Store results at upstream node i-1 (Python fv_idx)
-        FViterations[fv_idx] = inner_iteration_count
-        FVrestarts[fv_idx] = restart_count
-        delta[fv_idx] = d0
-        mt[fv_idx] = mt0
-        uld[fv_idx] = uld0
-        uv[fv_idx] = uv0
+        # Store results at upstream node
+        FViterations[k-1] = inner_iteration_count
+        FVrestarts[k-1] = restart_count
+        delta[k-1] = d0
+        mt[k-1] = mt0
+        uld[k-1] = uld0
+        uv[k-1] = uv0
         
-        if i == 1:
+        if k == 1:
             mtC = mt0
             
         # --- Check for Non-Convergence and Extrapolation ---
         if ((inner_iteration_count == max_inner_iterations) or (restart_count == max_restarts)):
-            if (i > 1) and (i < N - 1): # Between first Condenser node (i=1) and Evaporator End (i=N-1)
-                dmt = mt[i+1] - mt[i]
+            if (k > 1) and (k < N - 1): # Between first Condenser node (i=1) and Evaporator End (i=N-1)
+                dmt = mt[k+1] - mt[k]
                 
                 if abs(dmt) > NUMZERO: 
-                    # mtC = mt0 - X[k_matlab-1] * dmt / (X[k_matlab] - X[k_matlab-1])
-                    mtC = mt0 - X[i] * dmt / (X[i+1] - X[i])
+                    mtC = mt0 - X[k-1] * dmt / (X[k] - X[k-1])
                 else: 
                     mtC = mt0
                 
             else: 
                 mtC = mt0
                 
-            delta[fv_idx] = 0.0
-            knc = k_matlab # Store non-converged FV (MatLab index)
-            i = 0          # Stop FV evaluations
+            delta[k-1] = 0.0
+            knc = k # Store non-converged FV (MatLab index)
+            k = 0          # Stop FV evaluations
             
-        i -= 1 # Go to next FV (upstream)
-        k_matlab -= 1
+        k -= 1 # Go to next FV (upstream)
+
 
     if (knc == N): # Only check if not already broken from non-convergence
         if ((inner_iteration_count < max_inner_iterations) and (restart_count < max_restarts)):
             knc = 0 # Fully converged
         
-    return QC, QE, mtC, delta.flatten(), mt.flatten(), uld.flatten(), uv.flatten(), Tw.flatten(), d0start, knc, FViterations, FVrestarts
+    return QC, QE, mtC, delta, mt, uld, uv, Tw, d0start, knc, FViterations, FVrestarts
 
 
 def rhp_outer_loop(dEend: float, Tsat0: float, delta0: np.ndarray, fileID: object):
@@ -694,7 +692,7 @@ def rhp_outer_loop(dEend: float, Tsat0: float, delta0: np.ndarray, fileID: objec
     global N, Nc, DX, mtC_rel_tol, max_inner_iterations, max_outer_iterations, NUMZERO, max_restarts
 
     # Calculate Condenser inner wall area for heat flux qc
-    Ac = np.sum(2 * np.pi * RI[:Nc-1].flatten() * DX[:Nc-1].flatten())
+    Ac = np.sum(2 * np.pi * RI[:Nc-1] * DX[:Nc-1])
 
     # --- Generate Tsat-grid ---
     LOGN = (1 - np.logspace(-2, 0, max_outer_iterations)) * (100.0 / 99.0)
@@ -725,25 +723,25 @@ def rhp_outer_loop(dEend: float, Tsat0: float, delta0: np.ndarray, fileID: objec
     index_converged = np.where(knc_v == 0)[0]
     index_diverged = np.where(knc_v > 0)[0]
     count_converged = len(index_converged)
-    Tsat_ss = Tsat0 
-
+    
     if count_converged > 2:
         x_converged = mtC_rel_v[index_converged]
         y_converged = Tsat_v[index_converged]
         f = interp1d(x_converged, y_converged, kind='cubic', fill_value="extrapolate")
-        Tsat_ss = f(mtC_rel_tol).item()
+        Tsat_ss = f(mtC_rel)
     elif count_converged > 0:
         x_converged = mtC_rel_v[index_converged]
         y_converged = Tsat_v[index_converged]
         f = interp1d(x_converged, y_converged, kind='linear', fill_value="extrapolate")
-        Tsat_ss = f(mtC_rel_tol).item()
+        Tsat_ss = f(mtC_rel)
     else:
         min_knc = np.min(knc_v) if len(knc_v) > 0 else N # If no runs, keep initial guess Tsat0
         Tsat_ss = np.min(Tsat_v[np.where(knc_v == min_knc)[0]]) if len(np.where(knc_v == min_knc)[0]) > 0 else Tsat0
 
+
     # --- Final Run (Interpolated Tsat) ---
     results = rhp_inner_loop(dEend, Tsat_ss, delta0)
-    QC, QE, mtC, delta, mt, uld, uv, Tw, d0start_final, knc, FViterations, FVrestarts = results
+    QC, QE, mtC, delta, mt, uld, _, Tw, _, knc, FViterations, FVrestarts = results
 
     QCE = (QC + QE)
     QCE_abs_sum = np.abs(QC) + np.abs(QE)
@@ -752,27 +750,9 @@ def rhp_outer_loop(dEend: float, Tsat0: float, delta0: np.ndarray, fileID: objec
     mt_max = np.max(mt)
     mtC_rel = mtC / mt_max if abs(mt_max) > NUMZERO else 1.0/NUMZERO
 
-    # --- Convergence Info Logging ---
-    # Make sure we format scalars (not arrays) in the log string to avoid TypeError
-    delta_max = np.max(delta) if np.max(delta) > NUMZERO else 1.0/NUMZERO
-    # delta may be an array; extract first element safely
-    try:
-        deltaC = float(np.asarray(delta).ravel()[0])
-    except Exception:
-        deltaC = float(delta) if np.isscalar(delta) else 0.0
-
-    # QC and QE might be numpy types; convert to python floats for formatting
-    try:
-        QC_val = float(QC)
-    except Exception:
-        QC_val = 0.0
-    try:
-        QE_val = float(QE)
-    except Exception:
-        QE_val = 0.0
-
+    # --- Convergence Info Logging ---  
     log_line_1 = (f'mtC_rel={float(mtC_rel):.12f}    QCE_rel={float(QCE_rel):.12f}    '
-                  f'deltaC/max(delta)={deltaC/delta_max:.4f}    QC={QC_val:.2f} QE={QE_val:.2f}    '
+                  f'QC={float(QC):.2f} QE={float(QE):.2f}    '
                   f'converged={count_converged}/{max_outer_iterations} \n')
     fileID.write(log_line_1)  
     
@@ -797,7 +777,7 @@ def rhp_outer_loop(dEend: float, Tsat0: float, delta0: np.ndarray, fileID: objec
         fileID.write('inner restarts (final run): 0 restarts \n')
 
     # --- Results Calculation ---
-    V = liquid_volume(delta.reshape(-1, 1), RI)
+    V = liquid_volume(delta, RI)
     Q = mt_max * hfg 
     qc = Q / Ac      
     
@@ -807,22 +787,19 @@ def rhp_outer_loop(dEend: float, Tsat0: float, delta0: np.ndarray, fileID: objec
     # --- Prepare GrRe2 for Plots ---
     GrRe2 = np.zeros(N - 1)
     
-    RI_flat = RI.flatten()
-    alpha_flat = alpha.flatten()
-    
     for k in range(N - 1): 
         # uld, delta, Tw are N-element arrays/N-1 arrays
         Um = (uld[k] + uld[k+1]) / 2
         deltam = (delta[k] + delta[k+1]) / 2
         
-        Gr = grashof(RI_flat[k], alpha_flat[k], Tw[k] - Tsat_ss, deltam)
+        Gr = grashof(RI[k], alpha[k], Tw[k] - Tsat_ss, deltam)
         Re = reynolds(deltam, Um)
         Re2 = Re**2
 
         if Re2 > 0: 
             GrRe2[k] = Gr / Re2
         else:
-            GrRe2[k] = 0.0
+            GrRe2[k] = 1/NUMZERO
             
     return delta, mt, Tw, GrRe2, V, Tsat_ss, qc, knc, count_converged, Tsat_v, mtC_rel_v, QCE_rel_v, index_converged, index_diverged
 
@@ -841,18 +818,13 @@ def run_rhp_model():
 
     set_global_variables(1)   # parameter to choose configuration, right now there is only one
 
-    Nd = 1 # 21 Number of dEend discretization points (different filling ratios)
+    Nd = 2 # 21 Number of dEend discretization points (different filling ratios)
     dEend2Dmin = 0.0
     dEend2Dmax = 0.035   # 0.035 for Nd=1 and 0.0058595 for Nd=21
 
-    if N == 0:
-        print("Error: Global variables not set. Exiting.")
-        return
 
     L = Lc + La + Le
     meanRi = np.mean(Ri)
-    #meanRic = np.mean(Ri[0:Nc-1])   #DK
-    #Di = 2*Riae   #DK
     
     # Initial guess for first run (next runs take previous results as guess)
     dEendmin = (2 * meanRi) * dEend2Dmin
@@ -902,7 +874,7 @@ def run_rhp_model():
         print(f"dEend/D={dEend2D:.6f}")
         fileID.write(f"dEend/D={dEend2D:.6f} \n")
 
-        results = rhp_outer_loop(dEend, Tsat0, delta0.flatten(), fileID)
+        results = rhp_outer_loop(dEend, Tsat0, delta0, fileID)
         
         (delta, mt, Tw, GrRe2, V, Tsat_ss, qc, knc, 
          count_converged, Tsat_v, mtC_rel_v, QCE_rel_v, 
@@ -922,10 +894,9 @@ def run_rhp_model():
             print(f"count_converged={count_converged};")
             if (knc > 1):
                 print("DEBUG INFO")
-                # knc is the MatLab 1-based index, knc-1 is Python 0-based index
                 print(f"knc={knc};")
-                print(f"mt1={mt[knc-1]:.10f};") 
-                print(f"d1={delta[knc-1]:.10f};") 
+                print(f"mt1={mt[knc]:.10f};") 
+                print(f"d1={delta[knc]:.10f};") 
                 print(f"Tsat={Tsat_ss:.10f};")
             break   # no hope to try higher values of dEend
         else:
