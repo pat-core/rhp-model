@@ -73,7 +73,7 @@ def set_global_variables(configuration: int) -> int:
     rhol = 998.0   # density water
     muv = 12.4e-6  # viscosity vapour
     mul = 1e-3     # viscosity water (T=20°C)
-    betal = (1/3) * 20.7e-5 # thermal expansion
+    betal = (1.0/3.0) * 20.7e-5 # thermal expansion
     cpl = 4186.0   # spezific heat capacity
     hfg = 2.257e6  # latent heat
 
@@ -81,9 +81,9 @@ def set_global_variables(configuration: int) -> int:
     Lc = 0.089
     La = 0.057
     Le = 0.076
-    Ric = 0.0160 / 2    # inner radius at condenser (left)
-    Riae = 0.0191 / 2   # inner radius at adiabatic section (left), constant from there on
-    Ro_cae = 0.0254 / 2 # outer radius
+    Ric = 0.0160 / 2.0    # inner radius at condenser (left)
+    Riae = 0.0191 / 2.0   # inner radius at adiabatic section (left), constant from there on
+    Ro_cae = 0.0254 / 2.0 # outer radius
 
     # --- Derived Parameters (Calculations) ---
       
@@ -112,8 +112,8 @@ def set_global_variables(configuration: int) -> int:
     alpha[:Nc - 1] = alpha_const
     
     # 6. Inner Radius at Nodes (Ri)
-    Ri_cum_sum = np.cumsum(DX * np.sin(alpha))
-    Ri = Ric + np.concatenate([np.array([0.0]), Ri_cum_sum]) # Column vector (N x 1)
+    Ri_cumsum = np.cumsum(DX * np.sin(alpha))
+    Ri = Ric + np.concatenate([np.array([0.0]), Ri_cumsum]) # Column vector (N x 1)
     
     # 7. Outer Radius at Nodes (Ro)
     Ro = np.ones(N) * Ro_cae # Column vector (N x 1)
@@ -135,7 +135,6 @@ def look_up_song(d2D) -> float:
     ml0 = 0.7e-3
     ml_data = np.array([1, 3, 5, 7, 10]) * ml0
     interpolation_func = interp1d(d2D_data, ml_data, kind='linear', fill_value="extrapolate")
-    
     ml = interpolation_func(d2D)
     
     return ml
@@ -144,12 +143,12 @@ def liquid_volume(delta: np.ndarray, RI: np.ndarray) -> float:
     """Calculates total liquid volume (liquid_volume.m)"""
     # V = sum(2 * pi * RI_mid * delta_mid * DX)
     delta_mid = (delta[:-1] + delta[1:]) / 2 
-    Vl = np.sum(2 * np.pi * RI * delta_mid * DX)   # TODO .flatten()?
+    Vl = np.sum(2 * np.pi * RI * delta_mid * DX)   
     return Vl
 
 def grashof(rim: float, a: float, dTm: float, deltam: float) -> float:
     """Calculates Grashof number (grashof.m)"""
-    global rhol, betal, mul, omega
+    global rhol, betal, omega
     
     Gr = np.abs( (omega**2)*rim*np.cos(a)*betal*dTm*(deltam**3)/(nul**2) )
     return Gr
@@ -162,8 +161,8 @@ def reynolds(d: float, U: float) -> float:
     
 def restart_values(N: int) -> np.ndarray:
     """Generates restart correction factors K (restart_values.m)"""
-    K = np.zeros(N + 1)
-    N2 = N // 2
+    K = np.zeros(N)
+    N2 = (N-1) // 2
     N21 = N2 + 1
 
     for k in range(N2):
@@ -195,15 +194,15 @@ def heat_transfer_model_mixed_convection(d0: float, d1: float, Two: float, Tsat:
     global kl, hfg, Pr, kw
     
     Nuf = 1.0 # Nusselt Number of forced convection
-    d = (d0 + d1) / 2
-    ln = ri * np.log(ro / ri)
+    d = (d0 + d1) / 2.0
+    ln = ri * np.log(ro / ri)    
     
     # 1. First run with Twi=Two (Outer Wall Temp)
     Gr = grashof(ri, a, Tsat - Two, d)
     Ra = Gr * Pr
     
     Nun = 0.133 * Ra**0.375 # Nusselt Number of natural convection
-    Num = (Nuf**(7/2) + Nun**(7/2))**(2/7) # and mixed
+    Num = (Nuf**(7.0/2.0) + Nun**(7.0/2.0))**(2.0/7.0) # and mixed
     
     if d > 0: # there is a liquid layer
         Twi = ((Num * kl / d) * Tsat + (kw / ln) * Two) / (kw / ln + Num * kl / d)
@@ -214,7 +213,7 @@ def heat_transfer_model_mixed_convection(d0: float, d1: float, Two: float, Tsat:
     Gr = grashof(ri, a, Tsat - Twi, d)
     Ra = Gr * Pr
     Nun = 0.133 * Ra**0.375
-    Num = (Nuf**(7/2) + Nun**(7/2))**(2/7)
+    Num = (Nuf**(7.0/2.0) + Nun**(7.0/2.2))**(2.0/7.0)
 
     if d > 0:
         Twi = ((Num * kl / d) * Tsat + (kw / ln) * Two) / (kw / ln + Num * kl / d)
@@ -239,7 +238,7 @@ def liquid_flow_model_mixed_convection(d0: float, d1: float, mt1: float, dx: flo
     deltam = (d0 + d1) / 2
     
     # Cross-sectional area for vapour flow
-    Av = np.pi * (rim - deltam)**2 if (rim - deltam) > NUMZERO else NUMZERO
+    Av = np.pi * (rim - deltam)**2 
     
     # Estimate liquid velocities for flow regime determination (using b_forced=2)
     b_forced = 2
@@ -253,7 +252,7 @@ def liquid_flow_model_mixed_convection(d0: float, d1: float, mt1: float, dx: flo
     GrRe2 = Gr / (Re**2) if Re > NUMZERO else 1/NUMZERO # Use a large value if Re=0
 
     # Velocity profile power law exponent b
-    if Ra < 1e9:
+    if Ra < 1.0e9:
         if GrRe2 < 0.1: # forced convection
             b = 2.0
         elif GrRe2 < 10: # mixed convection
@@ -274,7 +273,7 @@ def liquid_flow_model_mixed_convection(d0: float, d1: float, mt1: float, dx: flo
         Cfw = 0.0
 
     # Vapour friction [Daniels]
-    Rev = u_avg * Av / nuv # MatLab uses uv1, but that is 0 on the first pass. Using u_avg is safer if it's the average velocity
+    Rev = uv1 * Av / nuv 
     if Rev > 0:
         if Rev < 2000:
             Cfd = 16.0 / Rev
@@ -293,12 +292,11 @@ def liquid_flow_model_mixed_convection(d0: float, d1: float, mt1: float, dx: flo
     QP = 0.4e1 * ((b + 1) * Av**2 * ((Cfw * dx * b**2) + (0.3e1 / 0.2e1 * Cfw * dx - d0 + d1) * b + (Cfw * dx) / 0.2e1) * rhov + 0.4e1 * Cfd * rim**2 * rhol * dx * (b + 0.1e1 / 0.2e1) * np.pi**2 * deltam**2) * U1 / (0.2e1 * (b + 1) * ((Cfw * dx * b**2) + (0.3e1 / 0.2e1 * Cfw * dx - d0 + d1) * b + (Cfw * dx) / 0.2e1 + 0.2e1 * deltam) * Av**2 * rhov + 0.8e1 * Cfd * rim**2 * rhol * dx * (b + 0.1e1 / 0.2e1) * np.pi**2 * deltam**2)
     QQ = (-0.16e2 * rim * Av**2 * omega**2 * ((b + 1)**2) * (b + 0.1e1 / 0.2e1) * rhov * (-d1 + d0) * deltam * np.cos(a) - 0.16e2 * rim * Av**2 * omega**2 * dx * ((b + 1)**2) * (b + 0.1e1 / 0.2e1) * rhov * deltam * np.sin(a) + 0.2e1 * (Av**2 * (Cfw * dx * (b**2) + (0.3e1 / 0.2e1 * Cfw * dx - d0 + d1) * b + Cfw * dx / 0.2e1 - 0.2e1 * deltam) * (b + 1) * rhov + 0.4e1 * Cfd * rim**2 * rhol * dx * (b + 0.1e1 / 0.2e1) * np.pi**2 * deltam**2) * U1**2) / (0.2e1 * (b + 1) * (Cfw * dx * (b**2) + (0.3e1 / 0.2e1 * Cfw * dx - d0 + d1) * b + Cfw * dx / 0.2e1 + 0.2e1 * deltam) * Av**2 * rhov + 0.8e1 * Cfd * rim**2 * rhol * dx * (b + 0.1e1 / 0.2e1) * np.pi**2 * deltam**2)
 
-    DISCRIMI=(QP/2)**2-QQ
+    DISCRIMI = (QP/2.0)**2 - QQ
     if DISCRIMI >= 0:
         U0 = (-QP/2)+np.sqrt(DISCRIMI); #prefer higher value (TODO check)
     else:
-        U0 = 0
-        #print('No real solution for U0 in liquid_flow_model_mixed_convection (evaporator).')    # TODO logging but only once
+        U0 = 0      # No real solution for U0 in liquid_flow_model_mixed_convection (evaporator).
     
     # top velocity from mass flow at x=x1 and mass flow difference
     mt0 = U0*(2*np.pi*ri0*rhol*d1)/(b+1)
@@ -313,9 +311,9 @@ def liquid_flow_model_film_condensation(d0: float, d1: float, mt1: float, dx: fl
     global rhol, mul, omega
     
     # Solve for dmt=Z/N, where mt1 = mt0 + dmt
-    Z1 = mt1-(rhol/mul)*(omega**2)*ri0*(np.sin(a)-np.cos(a)*(d1-d0)/dx)*(1/3)*(d0**3)*2*np.pi*ri0*rhol
-    N1 = 1-(1/2)*((d0**2)/(mul*dx))*(uv*np.cos(a)+uld)*2*np.pi*ri0*rhol
-    if N1 > 0:
+    Z1 = mt1-(rhol/mul)*(omega**2)*ri0*(np.sin(a)-np.cos(a)*(d1-d0)/dx)*(1.0/3.0)*(d0**3)*2*np.pi*ri0*rhol
+    N1 = 1-(1.0/2.0)*((d0**2)/(mul*dx))*(uv*np.cos(a)+uld)*2*np.pi*ri0*rhol
+    if abs(N1) > 0:
         dmt = Z1 / N1
     else:
         dmt = 1/NUMZERO
@@ -353,15 +351,15 @@ def iterate_fv_evaporator(d0start: float, d1: float, mt1: float, uv1: float, uld
     global Ro, Ri, alpha, TE
     global DX, dmt_diff_rel_tol, max_inner_iterations, max_restarts, NUMZERO
 
-    fv_idx = k - 2   #TODO check 
+    fv_k = k - 1   # k is node index, fv_k is finite volume index
     
-    dx = DX[fv_idx]
-    a = alpha[fv_idx]
+    dx = DX[fv_k]
+    a = alpha[fv_k]
     
-    # ri=Ri(k-1)/2 + Ri(k)/2; mid-point values
-    ri = (Ri[fv_idx] + Ri[fv_idx+1]) / 2 
-    ro = (Ro[fv_idx] + Ro[fv_idx+1]) / 2 
-    ri0 = Ri[fv_idx] # index of left node (x=x0)
+    # mid-point values
+    ri = (Ri[k] + Ri[k-1]) / 2 
+    ro = (Ro[k] + Ro[k-1]) / 2 
+    ri0 = Ri[k-1] # index of left node (x=x0)
     
     K = restart_values(max_restarts)
     
@@ -432,13 +430,13 @@ def iterate_fv_condenser(d0start: float, d1: float, mt1: float, uv1: float, uld1
     global Ro, Ri, alpha, TC
     global DX, dmt_diff_rel_tol, max_inner_iterations, max_restarts, MOD4GEOM
 
-    fv_idx = k - 2  # TODO check
+    fv_k = k - 1  # k is node index, fv_k is finite volume index
 
-    dx = DX[fv_idx]
-    a = alpha[fv_idx]
-    ri = (Ri[fv_idx] + Ri[fv_idx+1]) / 2 
-    ro = (Ro[fv_idx] + Ro[fv_idx+1]) / 2 
-    ri0 = Ri[fv_idx] # index of left node (x=x0)
+    dx = DX[fv_k]
+    a = alpha[fv_k]
+    ri = (Ri[k] + Ri[k-1]) / 2 
+    ro = (Ro[k] + Ro[k-1]) / 2 
+    ri0 = Ri[k-1] # index of left node (x=x0)
     
     K = restart_values(max_restarts)
     
@@ -512,11 +510,11 @@ def iterate_fv_adiabatic(d0start: float, d1: float, mt1: float, uv1: float, uld1
     global Ri, alpha
     global DX, NUMZERO, max_inner_iterations, max_restarts
 
-    fv_idx = k - 2 # TODO check
+    fv_k = k - 1 # k is node index, fv_k is finite volume index
 
-    dx = DX[fv_idx].item()
-    a = alpha[fv_idx].item()
-    ri0 = Ri[fv_idx].item() # index of left node (x=x0)
+    dx = DX[fv_k]
+    a = alpha[fv_k]
+    ri0 = Ri[k-1] # index of left node (x=x0)
 
     K = restart_values(max_restarts)
     
@@ -598,7 +596,7 @@ def rhp_inner_loop(dEend: float, Tsat: float, delta0: np.ndarray):
 
     diffd0 = np.diff(delta0)
     
-    # Boundary conditions at the Evaporator End (Node N, Python index N-1)
+    # Boundary conditions at the Evaporator End 
     delta[-1] = dEend
     mt[-1] = 0.0
     uld[-1] = 0.0
@@ -606,11 +604,8 @@ def rhp_inner_loop(dEend: float, Tsat: float, delta0: np.ndarray):
     
     d0start = 0.0
     mtC = 0.0
-    
     k = N - 1 
-        
     while k > 0:
-        
         
         d1 = delta[k]
         mt1 = mt[k]
@@ -621,7 +616,6 @@ def rhp_inner_loop(dEend: float, Tsat: float, delta0: np.ndarray):
         restart_count = 0
         qw = 0.0
         Twi = 0.0
-        
         
         if k > Nc + Na - 2: # Evaporator 
             d0start = max(d1 - diffd0[k-1], delta0[k-1])
@@ -643,7 +637,7 @@ def rhp_inner_loop(dEend: float, Tsat: float, delta0: np.ndarray):
             Tw[k-1] = Twi
             QC += qw * 2 * np.pi * RI[k-1] * DX[k-1]
 
-        # Store results at upstream node
+        # Store results for FV
         FViterations[k-1] = inner_iteration_count
         FVrestarts[k-1] = restart_count
         delta[k-1] = d0
@@ -667,7 +661,7 @@ def rhp_inner_loop(dEend: float, Tsat: float, delta0: np.ndarray):
             else: 
                 mtC = mt0
                 
-            delta[k-1] = 0.0
+            delta[k-1] = 0.0   #for diagram cosmetics only (non-converged)
             knc = k # Store non-converged FV (MatLab index)
             k = 0          # Stop FV evaluations
             
@@ -687,9 +681,9 @@ def rhp_outer_loop(dEend: float, Tsat0: float, delta0: np.ndarray, fileID: objec
     """
     
     # Use global variables
-    global hfg, rhol
-    global RI, alpha, TC, TE
-    global N, Nc, DX, mtC_rel_tol, max_inner_iterations, max_outer_iterations, NUMZERO, max_restarts
+    global hfg, rhol   # liquid
+    global RI, alpha, TC, TE   # wall, rotor
+    global N, Nc, DX, mtC_rel_tol, max_inner_iterations, max_outer_iterations, NUMZERO, max_restarts   # discretization and tolerances
 
     # Calculate Condenser inner wall area for heat flux qc
     Ac = np.sum(2 * np.pi * RI[:Nc-1] * DX[:Nc-1])
@@ -697,7 +691,6 @@ def rhp_outer_loop(dEend: float, Tsat0: float, delta0: np.ndarray, fileID: objec
     # --- Generate Tsat-grid ---
     LOGN = (1 - np.logspace(-2, 0, max_outer_iterations)) * (100.0 / 99.0)
     Tsat_v = TC + NUMZERO + LOGN * (Tsat0 - TC)
-    
     knc_v = np.zeros(max_outer_iterations, dtype=int)
     mtC_rel_v = np.zeros(max_outer_iterations)
     QCE_rel_v = np.zeros(max_outer_iterations)
@@ -724,12 +717,12 @@ def rhp_outer_loop(dEend: float, Tsat0: float, delta0: np.ndarray, fileID: objec
     index_diverged = np.where(knc_v > 0)[0]
     count_converged = len(index_converged)
     
-    if count_converged > 2:
+    if count_converged > 3:
         x_converged = mtC_rel_v[index_converged]
         y_converged = Tsat_v[index_converged]
         f = interp1d(x_converged, y_converged, kind='cubic', fill_value="extrapolate")
         Tsat_ss = f(mtC_rel)
-    elif count_converged > 0:
+    elif count_converged > 1:
         x_converged = mtC_rel_v[index_converged]
         y_converged = Tsat_v[index_converged]
         f = interp1d(x_converged, y_converged, kind='linear', fill_value="extrapolate")
@@ -745,10 +738,10 @@ def rhp_outer_loop(dEend: float, Tsat0: float, delta0: np.ndarray, fileID: objec
 
     QCE = (QC + QE)
     QCE_abs_sum = np.abs(QC) + np.abs(QE)
-    QCE_rel = QCE / QCE_abs_sum if QCE_abs_sum > NUMZERO else 1.0/NUMZERO
+    QCE_rel = QCE / QCE_abs_sum if QCE_abs_sum > 0 else 1.0/NUMZERO
     
     mt_max = np.max(mt)
-    mtC_rel = mtC / mt_max if abs(mt_max) > NUMZERO else 1.0/NUMZERO
+    mtC_rel = mtC / mt_max if abs(mt_max) > 0 else 1.0/NUMZERO
 
     # --- Convergence Info Logging ---  
     log_line_1 = (f'mtC_rel={float(mtC_rel):.12f}    QCE_rel={float(QCE_rel):.12f}    '
@@ -818,8 +811,8 @@ def run_rhp_model():
 
     set_global_variables(1)   # parameter to choose configuration, right now there is only one
 
-    Nd = 1 # 21 Number of dEend discretization points (different filling ratios)
-    dEend2Dmin = 0.001       # 0.000  (for Nd=1 min value is chosen and max ignored)
+    Nd = 1 # 21 Number of dEend discretization points corresponding to different filling ratios (for Nd=1 min value is chosen and max ignored)
+    dEend2Dmin = 0.001       # 0.000  
     dEend2Dmax = 0.035   # 0.035, 0.0058595 
 
     L = Lc + La + Le
@@ -833,8 +826,7 @@ def run_rhp_model():
     
     # Initial film height profile (linear condenser/evaporator, constant adiabatic)
     dc0 = np.linspace(0, delta_konst, Nc)   #DK.reshape(-1, 1)
-    da0_size = Na - 2   #because first and last node are in dc/de, same as for X
-    da0 = np.ones(da0_size) * delta_konst
+    da0 = np.ones(Na - 2) * delta_konst   #because first and last node are in dc or de (same as for X)
     de0 = np.linspace(delta_konst, dEendmin, Ne)   #DK.reshape(-1, 1)
     delta0 = np.concatenate([dc0, da0, de0])
 
@@ -843,7 +835,7 @@ def run_rhp_model():
         return
 
     # 2. RUN NUMERICAL SOLUTION (LOOP)
-    print(f"-- RUNNING RHP model with N={N} finite volumes --")
+    print(f"-- RUNNING RHP model with N={N} nodes and {N-1} finite volumes --")
     
     log_filename = 'local_iterations.log'
     if os.path.exists(log_filename):
@@ -900,8 +892,8 @@ def run_rhp_model():
         else:
             print(f"Tsat={Tsat_ss:.2f}°C    liquid mass m={V*rhol*1000:.2f} g    heat flux qc={qc:.2f} W/m^2")
 
-        delta0 = delta.reshape(-1, 1) 
-        Tsat0 = Tsat_ss
+        delta0 = delta     # start next run with last result 
+        Tsat0 = Tsat_ss    # start next run with last result
         
     fileID.close()
     print(f"\nLog file written to '{log_filename}'")
