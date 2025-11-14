@@ -161,14 +161,14 @@ def reynolds(d: float, U: float) -> float:
     
 def restart_values(N: int) -> np.ndarray:
     """Generates restart correction factors K (restart_values.m)"""
-    K = np.zeros(N)
-    N2 = (N-1) // 2
+    K = np.zeros(N+1)
+    N2 = (N) // 2
     N21 = N2 + 1
 
     for k in range(N2):
         K[2 * k ] = (N21 - k) / N21
         K[2 * k + 1] = N21 / (N21 - k)
-
+        
     return K
 
 def liquid_velocities(d0: float, d1: float, mt0: float, dmt: float, ri0: float, dx: float, a: float, b: float):
@@ -213,7 +213,7 @@ def heat_transfer_model_mixed_convection(d0: float, d1: float, Two: float, Tsat:
     Gr = grashof(ri, a, Tsat - Twi, d)
     Ra = Gr * Pr
     Nun = 0.133 * Ra**0.375
-    Num = (Nuf**(7.0/2.0) + Nun**(7.0/2.2))**(2.0/7.0)
+    Num = (Nuf**(7.0/2.0) + Nun**(7.0/2.0))**(2.0/7.0)
 
     if d > 0:
         Twi = ((Num * kl / d) * Tsat + (kw / ln) * Two) / (kw / ln + Num * kl / d)
@@ -249,7 +249,7 @@ def liquid_flow_model_mixed_convection(d0: float, d1: float, mt1: float, dx: flo
     Gr = grashof(rim, a, dTm, deltam)
     Re = reynolds(deltam, u_avg)
     Ra = Gr * Pr
-    GrRe2 = Gr / (Re**2) if Re > NUMZERO else 1/NUMZERO # Use a large value if Re=0
+    GrRe2 = Gr / (Re**2) if abs(Re) > NUMZERO else 1/NUMZERO # Use a large value if Re=0
 
     # Velocity profile power law exponent b
     if Ra < 1.0e9:
@@ -289,13 +289,14 @@ def liquid_flow_model_mixed_convection(d0: float, d1: float, mt1: float, dx: flo
         U1 = 0.0    # no liquid, no velocity
     
     # momentum bilance
-    QP = 0.4e1 * ((b + 1) * Av**2 * ((Cfw * dx * b**2) + (0.3e1 / 0.2e1 * Cfw * dx - d0 + d1) * b + (Cfw * dx) / 0.2e1) * rhov + 0.4e1 * Cfd * rim**2 * rhol * dx * (b + 0.1e1 / 0.2e1) * np.pi**2 * deltam**2) * U1 / (0.2e1 * (b + 1) * ((Cfw * dx * b**2) + (0.3e1 / 0.2e1 * Cfw * dx - d0 + d1) * b + (Cfw * dx) / 0.2e1 + 0.2e1 * deltam) * Av**2 * rhov + 0.8e1 * Cfd * rim**2 * rhol * dx * (b + 0.1e1 / 0.2e1) * np.pi**2 * deltam**2)
-    QQ = (-0.16e2 * rim * Av**2 * omega**2 * ((b + 1)**2) * (b + 0.1e1 / 0.2e1) * rhov * (-d1 + d0) * deltam * np.cos(a) - 0.16e2 * rim * Av**2 * omega**2 * dx * ((b + 1)**2) * (b + 0.1e1 / 0.2e1) * rhov * deltam * np.sin(a) + 0.2e1 * (Av**2 * (Cfw * dx * (b**2) + (0.3e1 / 0.2e1 * Cfw * dx - d0 + d1) * b + Cfw * dx / 0.2e1 - 0.2e1 * deltam) * (b + 1) * rhov + 0.4e1 * Cfd * rim**2 * rhol * dx * (b + 0.1e1 / 0.2e1) * np.pi**2 * deltam**2) * U1**2) / (0.2e1 * (b + 1) * (Cfw * dx * (b**2) + (0.3e1 / 0.2e1 * Cfw * dx - d0 + d1) * b + Cfw * dx / 0.2e1 + 0.2e1 * deltam) * Av**2 * rhov + 0.8e1 * Cfd * rim**2 * rhol * dx * (b + 0.1e1 / 0.2e1) * np.pi**2 * deltam**2)
+    QP = 4.0 * ((b + 1) * Av**2 * ((Cfw * dx * b**2) + (1.5 * Cfw * dx - d0 + d1) * b + (Cfw * dx) / 2.0) * rhov + 4.0 * Cfd * rim**2 * rhol * dx * (b + 0.5) * np.pi**2 * deltam**2) * U1 / (2.0 * (b + 1) * ((Cfw * dx * b**2) + (1.5 * Cfw * dx - d0 + d1) * b + (Cfw * dx) / 2.0 + 2.0 * deltam) * Av**2 * rhov + 8.0 * Cfd * rim**2 * rhol * dx * (b + 0.5) * np.pi**2 * deltam**2)
+    QQ = ((-16.0 * rim * Av**2 * omega**2 * (b + 1)**2 * (b + 0.5) * rhov * (d0 - d1) * deltam * np.cos(a) - 16.0 * rim * Av**2 * omega**2 * dx * (b + 1)**2 * (b + 0.5) * rhov * deltam * np.sin(a) + 2.0 * (Av**2 * (Cfw * dx * b**2 + (1.5 * Cfw * dx - d0 + d1) * b + Cfw * dx / 2.0 - 2.0 * deltam) * (b + 1) * rhov + 4.0 * Cfd * rim**2 * rhol * dx * (b + 0.5) * np.pi**2 * deltam**2) * U1**2) / (2.0 * (b + 1) * (Cfw * dx * b**2 + (1.5 * Cfw * dx - d0 + d1) * b + Cfw * dx / 2.0 + 2.0 * deltam) * Av**2 * rhov + 8.0 * Cfd * rim**2 * rhol * dx * (b + 0.5) * np.pi**2 * deltam**2))
 
     DISCRIMI = (QP/2.0)**2 - QQ
     if DISCRIMI >= 0:
-        U0 = (-QP/2)+np.sqrt(DISCRIMI); #prefer higher value (TODO check)
+        U0 = (-QP/2)+np.sqrt(DISCRIMI) #prefer higher value 
     else:
+        print("no real solution")
         U0 = 0      # No real solution for U0 in liquid_flow_model_mixed_convection (evaporator).
     
     # top velocity from mass flow at x=x1 and mass flow difference
@@ -371,12 +372,12 @@ def iterate_fv_evaporator(d0start: float, d1: float, mt1: float, uv1: float, uld
     iteration_count = 0
     
     # Regula Falsi history
-    d0prev = 0.0
-    fzprev = 0.0
-    dmt = 0.0
-    b_lf = 0.0 # Must be defined for liquid_velocities
-    Tw = 0.0
-    qw = 0.0
+    #d0prev = 0.0
+    #fzprev = 0.0
+    #dmt = 0.0
+    #b_lf = 0.0 # Must be defined for liquid_velocities
+    #Tw = 0.0
+    #qw = 0.0
     
     while ((dmt_diff_rel > dmt_diff_rel_tol) or (mt0 < 0)) and (restart_count < max_restarts) and (iteration_count < max_inner_iterations):
         iteration_count += 1
@@ -384,8 +385,8 @@ def iterate_fv_evaporator(d0start: float, d1: float, mt1: float, uv1: float, uld
         [dmt_ht, Tw, qw] = heat_transfer_model_mixed_convection(d0, d1, TE, Tsat, dx, ri, ro, a)
         [dmt_lf, b_lf] = liquid_flow_model_mixed_convection(d0, d1, mt1, dx, a, ri0, uv1, uld1, Tw, Tsat)
         
-        dmt_diff_rel = abs(dmt_ht - dmt_lf) / (abs(dmt_ht) + abs(dmt_lf)) if (abs(dmt_ht) + abs(dmt_lf)) > 0 else 1.0
-        
+        dmt_diff_rel = abs(dmt_ht - dmt_lf) / (abs(dmt_ht) + abs(dmt_lf)) if (abs(dmt_ht) + abs(dmt_lf)) > 0 else 0.0
+        print("dmt ht,lf:", dmt_ht, dmt_lf,"REL:", dmt_diff_rel)
         fz = (dmt_ht - dmt_lf) # function to be iterated to zero
         
         if iteration_count == 1: 
@@ -395,7 +396,7 @@ def iterate_fv_evaporator(d0start: float, d1: float, mt1: float, uv1: float, uld
                 d0next = (5.0/4.0) * d0
         else: # Regula Falsi
             if abs(fz - fzprev) < NUMZERO: # Avoid division by zero in Regula Falsi
-                 d0next = d0 * 0.99 
+                 d0next = (d0+d0prev)/2.0   # take middle for horizontal secant 
             else:
                  d0next = d0 - fz * (d0 - d0prev) / (fz - fzprev)
             
@@ -408,7 +409,7 @@ def iterate_fv_evaporator(d0start: float, d1: float, mt1: float, uv1: float, uld
             #if restart_count >= max_restarts: break # Safety break
             
             # Restart condition based on restart factors K
-            if d0start == 0:
+            if d0start < NUMZERO:
                 d0 = K[restart_count-1] * d1 
             else:
                 d0 = K[restart_count-1] * d0start
@@ -621,6 +622,9 @@ def rhp_inner_loop(dEend: float, Tsat: float, delta0: np.ndarray):
             d0start = max(d1 - diffd0[k-1], delta0[k-1])
             results = iterate_fv_evaporator(d0start, d1, mt1, uv1, uld1, Tsat, k)
             d0, mt0, uv0, uld0, Twi, qw, inner_iteration_count, restart_count = results
+            print("--- E ---")
+            print("d0 mt0 TWi:", d0, mt0, Twi)
+            print("   --- ")
             Tw[k-1] = Twi
             QE += qw * 2 * np.pi * RI[k-1] * DX[k-1]
             
@@ -669,8 +673,7 @@ def rhp_inner_loop(dEend: float, Tsat: float, delta0: np.ndarray):
 
 
     if (knc == N): # Only check if not already broken from non-convergence
-        if ((inner_iteration_count < max_inner_iterations) and (restart_count < max_restarts)):
-            knc = 0 # Fully converged
+            knc = 0 # Fully converged, means converged to last FV
         
     return QC, QE, mtC, delta, mt, uld, uv, Tw, d0start, knc, FViterations, FVrestarts
 
