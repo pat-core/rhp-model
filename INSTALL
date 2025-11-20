@@ -1,4 +1,2 @@
-run 
-python TODO.py
-
-minimum python version TODO
+Run main script with Python (tested with v3.12.9): 
+$ python main.py
