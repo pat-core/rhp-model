@@ -1,4 +1,4 @@
-# rhp-model
+# Rotating Heat Pipe Model
 Unverified implementation of
 
 SONG, F.; EWING, D.; CHING, C. Y. 
